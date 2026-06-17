@@ -532,6 +532,25 @@ has-session)
     fi
     ;;
 
+# --- list-sessions ---
+# Claude Code's "auto" teammate-mode detection probes for a live tmux server,
+# e.g. via `tmux list-sessions`. The real tmux exits non-zero with no output
+# when no server is running; an unhandled subcommand here would fall through
+# to the catch-all and print nothing, making auto-detect conclude "no tmux"
+# and silently fall back to in-process mode. Report our synthetic host session
+# so detection succeeds and split-window panes are used.
+list-sessions)
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -F) shift 2 || shift ;;
+            *) shift ;;
+        esac
+    done
+    # Minimal tmux-shaped output: "<name>: <n> windows"
+    echo "main: 1 windows (created $(date '+%a %b %e %T %Y'))"
+    exit 0
+    ;;
+
 # --- new-session ---
 new-session)
     ns_name=""
