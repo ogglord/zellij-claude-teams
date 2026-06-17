@@ -97,40 +97,7 @@ Add this repo to your flake inputs:
 
 This enables automatic activation in Bash and Zsh when inside Zellij.
 
-**Without Home Manager (Zsh example):**
-
-Add the flake to your `~/.zshrc` so it activates automatically when you start Zsh inside Zellij:
-
-```zsh
-# --- zellij-tmux-shim (Claude Code Agent Teams in zellij) ---
-if [[ -n "$ZELLIJ" ]]; then
-    # Build once and cache the path, or use nix profile install
-    _shim_pkg="$(nix build --no-link --print-out-paths github:ogglord/zellij-claude-teams 2>/dev/null)"
-    if [[ -n "$_shim_pkg" ]]; then
-        source "$_shim_pkg/lib/zellij-tmux-shim/activate.sh"
-    fi
-    unset _shim_pkg
-fi
-```
-
-Or install into your Nix profile for a persistent path:
-
-```bash
-nix profile install github:ogglord/zellij-claude-teams
-```
-
-Then add this to your `~/.zshrc`:
-
-```zsh
-# --- zellij-tmux-shim (Claude Code Agent Teams in zellij) ---
-if [[ -n "$ZELLIJ" ]]; then
-    _shim="${HOME}/.nix-profile/lib/zellij-tmux-shim/activate.sh"
-    [[ -f "$_shim" ]] && source "$_shim"
-    unset _shim
-fi
-```
-
-**With an overlay (in `configuration.nix`):**
+**With an overlay (in `configuration.nix`):
 
 Add the overlay to your flake and install the package system-wide:
 
