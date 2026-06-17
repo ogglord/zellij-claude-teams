@@ -97,23 +97,68 @@ Add this repo to your flake inputs:
 
 This enables automatic activation in Bash and Zsh when inside Zellij.
 
-**Without Home Manager:**
+**Without Home Manager (Zsh example):**
 
-```bash
-nix build github:ogglord/zellij-claude-teams
-source result/lib/zellij-tmux-shim/activate.sh
+Add the flake to your `~/.zshrc` so it activates automatically when you start Zsh inside Zellij:
+
+```zsh
+# --- zellij-tmux-shim (Claude Code Agent Teams in zellij) ---
+if [[ -n "$ZELLIJ" ]]; then
+    # Build once and cache the path, or use nix profile install
+    _shim_pkg="$(nix build --no-link --print-out-paths github:ogglord/zellij-claude-teams 2>/dev/null)"
+    if [[ -n "$_shim_pkg" ]]; then
+        source "$_shim_pkg/lib/zellij-tmux-shim/activate.sh"
+    fi
+    unset _shim_pkg
+fi
 ```
 
-Or install into your profile:
+Or install into your Nix profile for a persistent path:
 
 ```bash
 nix profile install github:ogglord/zellij-claude-teams
-source ~/.nix-profile/lib/zellij-tmux-shim/activate.sh
+```
+
+Then add this to your `~/.zshrc`:
+
+```zsh
+# --- zellij-tmux-shim (Claude Code Agent Teams in zellij) ---
+if [[ -n "$ZELLIJ" ]]; then
+    _shim="${HOME}/.nix-profile/lib/zellij-tmux-shim/activate.sh"
+    [[ -f "$_shim" ]] && source "$_shim"
+    unset _shim
+fi
 ```
 
 **With an overlay:**
 
-Add the overlay to your `nixpkgs` and reference `pkgs.zellij-tmux-shim` directly.
+Add the overlay to your flake so you can reference `pkgs.zellij-tmux-shim` directly:
+
+```nix
+{
+  inputs.zellij-claude-teams.url = "github:ogglord/zellij-claude-teams";
+
+  outputs = { self, nixpkgs, zellij-claude-teams, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ zellij-claude-teams.overlays.default ];
+      };
+    in {
+      # Now pkgs.zellij-tmux-shim is available
+      homeConfigurations.username = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          {
+            home.packages = [ pkgs.zellij-tmux-shim ];
+            # ... manually source the activate script in your shell config
+          }
+        ];
+      };
+    };
+}
+```
 
 ### Workspace trust (one-time)
 
