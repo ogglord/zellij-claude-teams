@@ -8,16 +8,33 @@ if [ -z "$ZELLIJ" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
+# Auto-detect install directory from this script's own location.
+# Robust against missing ZELLIJ_TMUX_SHIM_DIR env var (e.g. when sourced directly
+# from Nix store without the wrapper, or from a shell config snippet that doesn't
+# pre-set the variable).  Falls back to XDG default only as a last resort.
+if [ -z "${ZELLIJ_TMUX_SHIM_DIR:-}" ]; then
+    _shim_source="${BASH_SOURCE[0]:-${0}}"
+    if [ -L "$_shim_source" ]; then
+        _shim_source="$(readlink -f "$_shim_source" 2>/dev/null || readlink "$_shim_source" 2>/dev/null || echo "$_shim_source")"
+    fi
+    case "$_shim_source" in
+        /*) ;;
+        *) _shim_source="$(pwd)/$_shim_source" ;;
+    esac
+    ZELLIJ_TMUX_SHIM_DIR="$(cd "$(dirname "$_shim_source")" 2>/dev/null && pwd)"
+    unset _shim_source
+fi
+
+# If auto-detect failed (e.g. piped input, /dev/stdin), fall back to XDG default.
+ZELLIJ_TMUX_SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}"
+
 # Guard: don't double-activate — but always re-ensure PATH priority.
 # Child shells inherit ZELLIJ_TMUX_SHIM_ACTIVE but rebuild PATH from
 # shell config, pushing the shim behind other entries (brew, cargo, etc.).
 if [ -n "$ZELLIJ_TMUX_SHIM_ACTIVE" ]; then
-    export PATH="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}/bin:${PATH}"
+    export PATH="${ZELLIJ_TMUX_SHIM_DIR}/bin:${PATH}"
     return 0 2>/dev/null || exit 0
 fi
-
-# XDG-compliant install directory (only override if not already set, e.g. by Nix wrapper)
-ZELLIJ_TMUX_SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}"
 
 # Runtime state goes in a ephemeral, per-user, per-session directory (PIDs, FIFOs, etc.)
 # XDG_RUNTIME_DIR is /run/user/UID on systemd Linux; TMPDIR is per-user on macOS
