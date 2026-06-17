@@ -16,8 +16,8 @@ if [ -n "$ZELLIJ_TMUX_SHIM_ACTIVE" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-# XDG-compliant install directory
-ZELLIJ_TMUX_SHIM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim"
+# XDG-compliant install directory (only override if not already set, e.g. by Nix wrapper)
+ZELLIJ_TMUX_SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}"
 
 # Runtime state goes in a ephemeral, per-user, per-session directory (PIDs, FIFOs, etc.)
 # XDG_RUNTIME_DIR is /run/user/UID on systemd Linux; TMPDIR is per-user on macOS

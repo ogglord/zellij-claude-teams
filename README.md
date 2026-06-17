@@ -62,6 +62,59 @@ fi
 
 Then restart your shell inside Zellij.
 
+### NixOS / Nix
+
+If you use Nix or NixOS, the project provides a `flake.nix` with a package, overlay, and Home Manager module. A system-level NixOS module is unnecessary since the shim is a user-level shell integration.
+
+**With Home Manager:**
+
+Add this repo to your flake inputs:
+
+```nix
+{
+  inputs.zellij-claude-teams.url = "github:ogglord/zellij-claude-teams";
+
+  outputs = { self, nixpkgs, home-manager, zellij-claude-teams, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ zellij-claude-teams.overlays.default ];
+      };
+    in {
+      homeConfigurations.username = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          zellij-claude-teams.homeManagerModules.default
+          {
+            programs.zellij-tmux-shim.enable = true;
+          }
+        ];
+      };
+    };
+}
+```
+
+This enables automatic activation in Bash and Zsh when inside Zellij.
+
+**Without Home Manager:**
+
+```bash
+nix build github:ogglord/zellij-claude-teams
+source result/lib/zellij-tmux-shim/activate.sh
+```
+
+Or install into your profile:
+
+```bash
+nix profile install github:ogglord/zellij-claude-teams
+source ~/.nix-profile/lib/zellij-tmux-shim/activate.sh
+```
+
+**With an overlay:**
+
+Add the overlay to your `nixpkgs` and reference `pkgs.zellij-tmux-shim` directly.
+
 ### Workspace trust (one-time)
 
 Claude Code prompts for workspace trust per directory. To avoid each agent pane prompting individually, run `claude` once in your working directory and accept the trust dialog before using Agent Teams.
