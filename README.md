@@ -130,9 +130,9 @@ if [[ -n "$ZELLIJ" ]]; then
 fi
 ```
 
-**With an overlay:**
+**With an overlay (in `configuration.nix`):**
 
-Add the overlay to your flake so you can reference `pkgs.zellij-tmux-shim` directly:
+Add the overlay to your flake and install the package system-wide:
 
 ```nix
 {
@@ -141,19 +141,24 @@ Add the overlay to your flake so you can reference `pkgs.zellij-tmux-shim` direc
   outputs = { self, nixpkgs, zellij-claude-teams, ... }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ zellij-claude-teams.overlays.default ];
-      };
     in {
-      # Now pkgs.zellij-tmux-shim is available
-      homeConfigurations.username = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
+      nixosConfigurations.myhostname = nixpkgs.lib.nixosSystem {
+        inherit system;
         modules = [
-          {
-            home.packages = [ pkgs.zellij-tmux-shim ];
-            # ... manually source the activate script in your shell config
-          }
+          ({ config, pkgs, ... }: {
+            nixpkgs.overlays = [ zellij-claude-teams.overlays.default ];
+
+            # Make the shim available globally
+            environment.systemPackages = [ pkgs.zellij-tmux-shim ];
+
+            # Add to your shell config (e.g., via programs.zsh or manually in /etc/zshrc)
+            programs.zsh.enable = true;
+            programs.zsh.interactiveShellInit = ''
+              if [[ -n "$ZELLIJ" ]]; then
+                source "${pkgs.zellij-tmux-shim}/lib/zellij-tmux-shim/activate.sh"
+              fi
+            '';
+          })
         ];
       };
     };
