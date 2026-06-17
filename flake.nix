@@ -33,6 +33,7 @@
               # Install the core scripts
               cp $src/activate.sh   $out/lib/zellij-tmux-shim/activate.sh
               cp $src/deactivate.sh $out/lib/zellij-tmux-shim/deactivate.sh
+              cp $src/install.sh    $out/lib/zellij-tmux-shim/install.sh
               cp $src/bin/tmux      $out/lib/zellij-tmux-shim/bin/tmux
               cp $src/bin/zellij-pane-wrapper $out/lib/zellij-tmux-shim/bin/zellij-pane-wrapper
 
@@ -41,6 +42,7 @@
               chmod +x $out/lib/zellij-tmux-shim/bin/zellij-pane-wrapper
               chmod +x $out/lib/zellij-tmux-shim/activate.sh
               chmod +x $out/lib/zellij-tmux-shim/deactivate.sh
+              chmod +x $out/lib/zellij-tmux-shim/install.sh
 
               # Create a convenience wrapper for activation
               # This sets up the shim for the current shell session
@@ -49,6 +51,10 @@
 
               # Create a convenience wrapper for deactivation
               makeWrapper $out/lib/zellij-tmux-shim/deactivate.sh $out/bin/zellij-tmux-shim-deactivate
+
+              # Create a convenience wrapper for installation to XDG path
+              makeWrapper $out/lib/zellij-tmux-shim/install.sh $out/bin/zellij-tmux-shim-install \
+                --set SCRIPT_DIR "$out/lib/zellij-tmux-shim"
 
               runHook postInstall
             '';

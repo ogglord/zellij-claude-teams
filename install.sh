@@ -10,7 +10,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Respect pre-set SCRIPT_DIR (e.g. from Nix wrapper), otherwise auto-detect
+if [ -z "${SCRIPT_DIR:-}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim"
 
 usage() {

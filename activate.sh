@@ -12,6 +12,9 @@ fi
 # Robust against missing ZELLIJ_TMUX_SHIM_DIR env var (e.g. when sourced directly
 # from Nix store without the wrapper, or from a shell config snippet that doesn't
 # pre-set the variable).  Falls back to XDG default only as a last resort.
+if [ -n "${ZELLIJ_TMUX_SHIM_DIR:-}" ]; then
+    _had_cached_dir=1
+fi
 if [ -z "${ZELLIJ_TMUX_SHIM_DIR:-}" ]; then
     _shim_source="${BASH_SOURCE[0]:-${0}}"
     if [ -L "$_shim_source" ]; then
@@ -27,6 +30,30 @@ fi
 
 # If auto-detect failed (e.g. piped input, /dev/stdin), fall back to XDG default.
 ZELLIJ_TMUX_SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}"
+
+# Validate: if ZELLIJ_TMUX_SHIM_DIR was inherited from a parent but the shim's
+# tmux binary is missing (stale XDG install, Nix store GC, etc.), force
+# re-detection instead of silently pointing at an empty directory.
+if [ ! -x "${ZELLIJ_TMUX_SHIM_DIR}/bin/tmux" ]; then
+    # Only re-detect if the value was inherited — don't loop on a fresh detection
+    # that genuinely failed (e.g. /dev/stdin source, which will land here too).
+    if [ -n "${_had_cached_dir:-}" ]; then
+        echo "zellij-tmux-shim: cached ZELLIJ_TMUX_SHIM_DIR has no tmux binary, re-detecting" >&2
+        unset ZELLIJ_TMUX_SHIM_DIR
+        _shim_source="${BASH_SOURCE[0]:-${0}}"
+        if [ -L "$_shim_source" ]; then
+            _shim_source="$(readlink -f "$_shim_source" 2>/dev/null || readlink "$_shim_source" 2>/dev/null || echo "$_shim_source")"
+        fi
+        case "$_shim_source" in
+            /*) ;;
+            *) _shim_source="$(pwd)/$_shim_source" ;;
+        esac
+        ZELLIJ_TMUX_SHIM_DIR="$(cd "$(dirname "$_shim_source")" 2>/dev/null && pwd)"
+        unset _shim_source
+        ZELLIJ_TMUX_SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}"
+    fi
+fi
+unset _had_cached_dir
 
 # Guard: don't double-activate — but always re-ensure PATH priority.
 # Child shells inherit ZELLIJ_TMUX_SHIM_ACTIVE but rebuild PATH from
