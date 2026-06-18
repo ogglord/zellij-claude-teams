@@ -42,6 +42,95 @@ validate_pane_key() {
     esac
 }
 
+# Bash 3.2 compatible substring replacement
+# Usage: _replace_all "string" "pattern" "replacement"
+_replace_all() {
+    local str="$1"
+    local pat="$2"
+    local rep="$3"
+    local result=""
+
+    while true; do
+        case "$str" in
+            *"$pat"*)
+                local prefix="${str%%"$pat"*}"
+                result="${result}${prefix}${rep}"
+                str="${str#*"$pat"}"
+                ;;
+            *)
+                result="${result}${str}"
+                break
+                ;;
+        esac
+    done
+
+    printf '%s' "$result"
+}
+
+# Resolve tmux format strings (e.g. #{pane_id}, #{pane_tty}) to actual values.
+# Usage: resolve_format "format_string" [pane_pid]
+resolve_format() {
+    local fmt="$1"
+    local pane_pid="${2:-}"
+
+    local tty_path
+    tty_path=$(tty 2>/dev/null || echo "/dev/tty")
+    local current_path
+    current_path=$(pwd)
+    local current_term="${TERM:-xterm-256color}"
+    local current_pid="$$"
+    local current_date
+    current_date=$(date '+%s')
+    local pane_id="${TMUX_PANE:-"%0"}"
+
+    fmt=$(_replace_all "$fmt" "#{pane_id}" "$pane_id")
+    fmt=$(_replace_all "$fmt" "#{pane_tty}" "$tty_path")
+    fmt=$(_replace_all "$fmt" "#{pane_current_path}" "$current_path")
+    fmt=$(_replace_all "$fmt" "#{pane_pid}" "${pane_pid:-$current_pid}")
+    fmt=$(_replace_all "$fmt" "#{client_tty}" "$tty_path")
+    fmt=$(_replace_all "$fmt" "#{client_termname}" "$current_term")
+    fmt=$(_replace_all "$fmt" "#{client_termtype}" "$current_term")
+    fmt=$(_replace_all "$fmt" "#{session_name}" "main")
+    fmt=$(_replace_all "$fmt" "#{window_index}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_name}" "main")
+    fmt=$(_replace_all "$fmt" "#{pane_title}" "zellij")
+    fmt=$(_replace_all "$fmt" "#{pane_width}" "80")
+    fmt=$(_replace_all "$fmt" "#{pane_height}" "24")
+    fmt=$(_replace_all "$fmt" "#{pane_active}" "1")
+    fmt=$(_replace_all "$fmt" "#{pane_in_mode}" "0")
+    fmt=$(_replace_all "$fmt" "#{pane_synchronized}" "0")
+    fmt=$(_replace_all "$fmt" "#{pane_dead}" "0")
+    fmt=$(_replace_all "$fmt" "#{pane_dead_status}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_active}" "1")
+    fmt=$(_replace_all "$fmt" "#{window_zoomed_flag}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_layout}" "abcd")
+    fmt=$(_replace_all "$fmt" "#{window_flags}" "*")
+    fmt=$(_replace_all "$fmt" "#{window_bell_flag}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_activity_flag}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_silence_flag}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_marked_flag}" "0")
+    fmt=$(_replace_all "$fmt" "#{window_panes}" "1")
+    fmt=$(_replace_all "$fmt" "#{session_windows}" "1")
+    fmt=$(_replace_all "$fmt" "#{session_attached}" "1")
+    fmt=$(_replace_all "$fmt" "#{session_group}" "")
+    fmt=$(_replace_all "$fmt" "#{session_group_size}" "1")
+    fmt=$(_replace_all "$fmt" "#{session_alerts}" "")
+    fmt=$(_replace_all "$fmt" "#{session_stack}" "")
+    fmt=$(_replace_all "$fmt" "#{session_activity}" "$current_date")
+    fmt=$(_replace_all "$fmt" "#{session_created}" "$current_date")
+    fmt=$(_replace_all "$fmt" "#{session_last_attached}" "$current_date")
+    fmt=$(_replace_all "$fmt" "#{session_id}" "\$0")
+    fmt=$(_replace_all "$fmt" "#{client_session}" "main")
+    fmt=$(_replace_all "$fmt" "#{client_last_session}" "")
+    fmt=$(_replace_all "$fmt" "#{client_width}" "80")
+    fmt=$(_replace_all "$fmt" "#{client_height}" "24")
+    fmt=$(_replace_all "$fmt" "#{client_pid}" "$current_pid")
+    fmt=$(_replace_all "$fmt" "#{client_version}" "3.6a")
+    fmt=$(_replace_all "$fmt" "#{client_termfeatures}" "256,RGB,title")
+
+    printf '%s\n' "$fmt"
+}
+
 # Atomic increment of next_id using mkdir-based locking (portable; macOS lacks flock)
 alloc_pane_id() {
     local lockdir="${STATE_DIR}/next_id.lock"
@@ -249,24 +338,11 @@ display-message)
         esac
     done
 
-    case "$local_format" in
-        '#{pane_id}')
-            echo "${TMUX_PANE:-"%0"}"
-            ;;
-        '#{session_name}:#{window_index}')
-            echo "main:0"
-            ;;
-        '#{session_name}')
-            echo "main"
-            ;;
-        '#{window_index}')
-            echo "0"
-            ;;
-        *)
-            log_debug "display-message: unhandled format '$local_format'"
-            echo "main:0"
-            ;;
-    esac
+    if [ -n "$local_format" ]; then
+        resolve_format "$local_format"
+    else
+        echo "main:0"
+    fi
     exit 0
     ;;
 
@@ -363,7 +439,13 @@ split-window)
 
     # Print pane ID if -P was given
     if [ "$sw_print" = true ]; then
-        echo "$NEW_PANE_ID"
+        if [ -n "$sw_format" ]; then
+            export TMUX_PANE="$NEW_PANE_ID"
+            resolve_format "$sw_format" "$$"
+            export TMUX_PANE="${TMUX_PANE:-"%0"}"
+        else
+            echo "$NEW_PANE_ID"
+        fi
     fi
     exit 0
     ;;
@@ -485,16 +567,24 @@ kill-pane)
 
 # --- list-panes ---
 list-panes)
+    lp_format=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -t) shift 2 || shift ;;
-            -F) shift 2 || shift ;;
+            -F) lp_format="${2:-}"; shift 2 || shift ;;
             *) shift ;;
         esac
     done
 
+    # Save original TMUX_PANE and restore after
+    _orig_tmux_pane="${TMUX_PANE:-"%0"}"
+
     # Always output the host pane
-    echo "%0"
+    if [ -n "$lp_format" ]; then
+        resolve_format "$lp_format" "$$"
+    else
+        echo "%0"
+    fi
 
     # Output tracked panes with live processes (skip %0 — already listed above)
     for pidfile in "${STATE_DIR}"/*.pid; do
@@ -504,9 +594,17 @@ list-panes)
         [ "$pane_key" = "0" ] && continue
         pid=$(cat "$pidfile" 2>/dev/null)
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo "%${pane_key}"
+            if [ -n "$lp_format" ]; then
+                export TMUX_PANE="%${pane_key}"
+                resolve_format "$lp_format" "$pid"
+            else
+                echo "%${pane_key}"
+            fi
         fi
     done
+
+    export TMUX_PANE="$_orig_tmux_pane"
+    unset _orig_tmux_pane
     exit 0
     ;;
 
@@ -540,14 +638,19 @@ has-session)
 # and silently fall back to in-process mode. Report our synthetic host session
 # so detection succeeds and split-window panes are used.
 list-sessions)
+    ls_format=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            -F) shift 2 || shift ;;
+            -F) ls_format="${2:-}"; shift 2 || shift ;;
             *) shift ;;
         esac
     done
-    # Minimal tmux-shaped output: "<name>: <n> windows"
-    echo "main: 1 windows (created $(date '+%a %b %e %T %Y'))"
+    if [ -n "$ls_format" ]; then
+        resolve_format "$ls_format"
+    else
+        # Minimal tmux-shaped output: "<name>: <n> windows (created ...) (attached)"
+        echo "main: 1 windows (created $(date '+%a %b %e %T %Y')) (attached)"
+    fi
     exit 0
     ;;
 
@@ -647,21 +750,144 @@ new-window)
     # after the wrapper renames the pane.
 
     if [ "$nw_print" = true ]; then
-        echo "$NEW_PANE_ID"
+        if [ -n "$nw_format" ]; then
+            export TMUX_PANE="$NEW_PANE_ID"
+            resolve_format "$nw_format" "$$"
+            export TMUX_PANE="${TMUX_PANE:-"%0"}"
+        else
+            echo "$NEW_PANE_ID"
+        fi
     fi
     exit 0
     ;;
 
 # --- list-windows ---
 list-windows)
+    lw_format=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -t) shift 2 || shift ;;
-            -F) shift 2 || shift ;;
+            -F) lw_format="${2:-}"; shift 2 || shift ;;
             *) shift ;;
         esac
     done
-    echo "main"
+    if [ -n "$lw_format" ]; then
+        resolve_format "$lw_format"
+    else
+        echo "main"
+    fi
+    exit 0
+    ;;
+
+# --- show-environment ---
+show-environment)
+    se_target=""
+    se_name=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) se_target="${2:-}"; shift 2 || shift ;;
+            -g) shift ;;
+            *) se_name="$1"; shift ;;
+        esac
+    done
+    if [ -n "$se_name" ]; then
+        # Show a specific variable
+        val="${!se_name:-}"
+        if [ -n "$val" ]; then
+            echo "$se_name=$val"
+        else
+            echo "-$se_name"
+        fi
+    else
+        # Show all environment variable names
+        env | grep -v '^_=' | grep -v '^PWD=' | sed 's/=.*//' 2>/dev/null || true
+    fi
+    exit 0
+    ;;
+
+# --- set-environment / setenv ---
+set-environment|setenv)
+    sev_target=""
+    sev_unset=false
+    sev_name=""
+    sev_value=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) sev_target="${2:-}"; shift 2 || shift ;;
+            -g) shift ;;
+            -u) sev_unset=true; shift ;;
+            *)
+                if [ -z "$sev_name" ]; then
+                    sev_name="$1"
+                elif [ -z "$sev_value" ]; then
+                    sev_value="$1"
+                fi
+                shift ;;
+        esac
+    done
+    if [ "$sev_unset" = true ] && [ -n "$sev_name" ]; then
+        unset "$sev_name" 2>/dev/null || true
+    elif [ -n "$sev_name" ] && [ -n "$sev_value" ]; then
+        export "$sev_name=$sev_value"
+    fi
+    exit 0
+    ;;
+
+# --- show-options / show ---
+show-options|show)
+    so_target=""
+    so_name=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) so_target="${2:-}"; shift 2 || shift ;;
+            -g) shift ;;
+            -w) shift ;;
+            *) so_name="$1"; shift ;;
+        esac
+    done
+    if [ -n "$so_name" ]; then
+        # Return default values for common options
+        case "$so_name" in
+            default-terminal) echo "tmux-256color" ;;
+            mouse) echo "off" ;;
+            prefix) echo "C-b" ;;
+            base-index) echo "0" ;;
+            pane-base-index) echo "0" ;;
+            focus-events) echo "on" ;;
+            *) echo "" ;;
+        esac
+    fi
+    exit 0
+    ;;
+
+# --- run-shell ---
+run-shell)
+    rs_target=""
+    rs_cmd=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) rs_target="${2:-}"; shift 2 || shift ;;
+            -b) shift ;;
+            -d) shift ;;
+            *) rs_cmd="$1"; shift ;;
+        esac
+    done
+    if [ -n "$rs_cmd" ]; then
+        eval "$rs_cmd" 2>/dev/null || true
+    fi
+    exit 0
+    ;;
+
+# --- info / server-info ---
+info|server-info)
+    echo "protocol version 8"
+    echo "server version: tmux 3.6a"
+    exit 0
+    ;;
+
+# --- version ---
+--version)
+    echo "tmux 3.6a"
     exit 0
     ;;
 
